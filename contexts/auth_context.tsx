@@ -1,7 +1,7 @@
+import { supabase } from '@/lib/supabase';
 import * as SecureStore from 'expo-secure-store';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Database } from '../database.types';
-import { supabase } from '../utils/supabase';
 
 // Types for TypeScript
 interface User {

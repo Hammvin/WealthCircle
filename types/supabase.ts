@@ -41,19 +41,48 @@ export interface Database {
           updated_at?: string
         }
       }
-      // Add other table definitions as needed
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
+      chamas: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          savings_goal: string
+          contribution_cycle: 'weekly' | 'monthly'
+          contribution_amount: number
+          total_kitty: number
+          invite_code: string
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          savings_goal: string
+          contribution_cycle: 'weekly' | 'monthly'
+          contribution_amount: number
+          total_kitty?: number
+          invite_code: string
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          savings_goal?: string
+          contribution_cycle?: 'weekly' | 'monthly'
+          contribution_amount?: number
+          total_kitty?: number
+          invite_code?: string
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      // Add other table definitions from previous schema
     }
   }
 }
