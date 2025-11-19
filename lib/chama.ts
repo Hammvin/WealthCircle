@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from '@/utils/supabase';
 
 export const ChamaService = {
   async createChama(chamaData: {
@@ -10,7 +10,9 @@ export const ChamaService = {
   }) {
     try {
       const user = await supabase.auth.getUser();
-      if (!user.data.user) throw new Error('User not authenticated');
+      if (!user.data.user) {
+        return { success: false, error: 'Authentication required' };
+      }
 
       const inviteCode = this.generateInviteCode();
 
@@ -26,40 +28,14 @@ export const ChamaService = {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        return { success: false, error: error.message };
+      }
 
+      // Add creator as chairperson
       await this.addMember(data.id, user.data.user.id, 'chairperson');
+      
       return { success: true, chama: data };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  },
-
-  async joinChama(inviteCode: string) {
-    try {
-      const user = await supabase.auth.getUser();
-      if (!user.data.user) throw new Error('User not authenticated');
-
-      const { data: chama, error: chamaError } = await supabase
-        .from('chamas')
-        .select('*')
-        .eq('invite_code', inviteCode)
-        .single();
-
-      if (chamaError) throw new Error('Invalid invite code');
-
-      const { error: memberError } = await supabase
-        .from('chama_members')
-        .insert([
-          {
-            chama_id: chama.id,
-            user_id: user.data.user.id,
-            role: 'member',
-          },
-        ]);
-
-      if (memberError) throw memberError;
-      return { success: true, chama };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -68,7 +44,9 @@ export const ChamaService = {
   async getUserChamas() {
     try {
       const user = await supabase.auth.getUser();
-      if (!user.data.user) throw new Error('User not authenticated');
+      if (!user.data.user) {
+        return { success: false, error: 'Authentication required' };
+      }
 
       const { data, error } = await supabase
         .from('chama_members')
@@ -78,35 +56,17 @@ export const ChamaService = {
         `)
         .eq('user_id', user.data.user.id);
 
-      if (error) throw error;
-      return { success: true, chamas: data };
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, chamas: data?.map(item => item.chama) || [] };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
   },
 
-  async getChamaDetails(chamaId: string) {
-    try {
-      const { data, error } = await supabase
-        .from('chamas')
-        .select(`
-          *,
-          members:chama_members(
-            role,
-            user:users(full_name, phone_number, profile_picture_url)
-          )
-        `)
-        .eq('id', chamaId)
-        .single();
-
-      if (error) throw error;
-      return { success: true, chama: data };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  },
-
-  private async addMember(chamaId: string, userId: string, role: string) {
+  async addMember(chamaId: string, userId: string, role: string) {
     const { error } = await supabase
       .from('chama_members')
       .insert([{ chama_id: chamaId, user_id: userId, role }]);

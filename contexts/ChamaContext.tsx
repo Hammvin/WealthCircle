@@ -17,7 +17,7 @@ interface Chama {
 
 interface ChamaContextType {
   currentChama: Chama | null;
-  userChamas: any[];
+  userChamas: Chama[];
   loading: boolean;
   selectChama: (chama: Chama) => void;
   refreshChamas: () => Promise<void>;
@@ -31,7 +31,7 @@ interface ChamaProviderProps {
 
 export function ChamaProvider({ children }: ChamaProviderProps) {
   const [currentChama, setCurrentChama] = useState<Chama | null>(null);
-  const [userChamas, setUserChamas] = useState<any[]>([]);
+  const [userChamas, setUserChamas] = useState<Chama[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,13 +45,9 @@ export function ChamaProvider({ children }: ChamaProviderProps) {
       
       if (result.success) {
         setUserChamas(result.chamas || []);
-        
-        // Auto-select first chama if available and none selected
         if (result.chamas && result.chamas.length > 0 && !currentChama) {
           setCurrentChama(result.chamas[0]);
         }
-      } else {
-        console.error('Failed to load chamas:', result.error);
       }
     } catch (error) {
       console.error('Error loading chamas:', error);

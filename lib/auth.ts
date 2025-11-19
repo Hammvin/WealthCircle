@@ -1,17 +1,21 @@
-import * as SecureStore from 'expo-secure-store';
-import { supabase } from './supabase';
+import { supabase } from '@/utils/supabase';
 
 export const AuthService = {
   async signUpWithPhone(phoneNumber: string, fullName: string) {
     try {
-      const cleanPhone = this.cleanPhoneNumber(phoneNumber);
-      
+      if (!fullName || fullName.length < 2) {
+        return { success: false, error: 'Full name must be at least 2 characters' };
+      }
+
       const { data, error } = await supabase.auth.signUp({
-        phone: cleanPhone,
+        phone: phoneNumber,
         password: this.generateTemporaryPassword(),
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Auth signup error:', error.message);
+        return { success: false, error: 'Registration failed. Please try again.' };
+      }
 
       if (data.user) {
         const { error: profileError } = await supabase
@@ -19,86 +23,73 @@ export const AuthService = {
           .insert([
             {
               id: data.user.id,
-              phone_number: cleanPhone,
+              phone_number: phoneNumber,
               full_name: fullName,
             },
           ]);
 
-        if (profileError) throw profileError;
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          return { success: false, error: 'Profile setup failed' };
+        }
       }
 
       return { success: true, user: data.user };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      console.error('Signup unexpected error:', error);
+      return { success: false, error: 'Registration failed. Please try again.' };
     }
   },
 
   async verifyOTP(phoneNumber: string, token: string) {
     try {
+      if (!token || token.length !== 6) {
+        return { success: false, error: 'Invalid OTP format' };
+      }
+
       const { data, error } = await supabase.auth.verifyOtp({
-        phone: this.cleanPhoneNumber(phoneNumber),
+        phone: phoneNumber,
         token,
         type: 'sms',
       });
 
-      if (error) throw error;
+      if (error) {
+        return { success: false, error: 'Invalid or expired OTP' };
+      }
+
       return { success: true, session: data.session };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: 'Verification failed' };
     }
   },
 
-  async setupPIN(pin: string) {
+  async signInWithPhone(phoneNumber: string) {
     try {
-      const pinHash = await this.hashPIN(pin);
-      const user = await supabase.auth.getUser();
-      
-      if (!user.data.user) throw new Error('User not authenticated');
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: phoneNumber,
+      });
 
-      const { error } = await supabase
-        .from('users')
-        .update({ pin_hash: pinHash })
-        .eq('id', user.data.user.id);
+      if (error) {
+        return { success: false, error: error.message };
+      }
 
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: 'Login failed' };
+    }
+  },
+
+  async signOut() {
+    try {
+      const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
-      await SecureStore.setItemAsync('user_pin_set', 'true');
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
   },
 
-  async verifyPIN(pin: string): Promise<boolean> {
-    try {
-      const user = await supabase.auth.getUser();
-      if (!user.data.user) return false;
-
-      const { data } = await supabase
-        .from('users')
-        .select('pin_hash')
-        .eq('id', user.data.user.id)
-        .single();
-
-      if (!data?.pin_hash) return false;
-
-      const hashedInput = await this.hashPIN(pin);
-      return data.pin_hash === hashedInput;
-    } catch {
-      return false;
-    }
-  },
-
-  private cleanPhoneNumber(phone: string): string {
-    return phone.replace(/\s+/g, '').replace(/^0/, '+254');
-  },
-
   private generateTemporaryPassword(): string {
     return Math.random().toString(36).slice(-10) + 'A1!';
-  },
-
-  private async hashPIN(pin: string): Promise<string> {
-    // In production, use proper hashing like bcrypt
-    return btoa(pin);
-  },
+  }
 };
