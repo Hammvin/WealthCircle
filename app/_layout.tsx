@@ -24,7 +24,6 @@ function RootLayoutNav() {
       <Stack.Screen name="profile" />
       <Stack.Screen name="forgot-password" />
       <Stack.Screen name="change-password" />
-      <Stack.Screen name="test-db" />
     </Stack>
   );
 }

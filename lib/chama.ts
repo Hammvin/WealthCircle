@@ -1,5 +1,4 @@
-import { supabase } from '@/lib/supabase';
-import { Database } from '@/types/database.types';
+import { Database, supabase } from '@/lib/supabase';
 
 // Security constants
 const SECURITY_CONFIG = {

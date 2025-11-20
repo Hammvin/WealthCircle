@@ -1,5 +1,3 @@
-[file name]: supabase.ts
-[file content begin]
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Database } from './database.types';
@@ -868,4 +866,3 @@ export const Security = {
 };
 
 export type { Database };
-[file content end]

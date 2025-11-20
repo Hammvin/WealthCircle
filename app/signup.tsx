@@ -1,15 +1,15 @@
 import { Link, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useAuth } from '../contexts/auth_context';
 
@@ -29,6 +29,51 @@ export default function SignupScreen() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const validatePassword = (password: string): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    if (password.length < 8) {
+      errors.push('Password must be at least 8 characters long');
+    }
+
+    if (!/(?=.*[a-z])/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter');
+    }
+
+    if (!/(?=.*[A-Z])/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter');
+    }
+
+    if (!/(?=.*\d)/.test(password)) {
+      errors.push('Password must contain at least one number');
+    }
+
+    if (!/(?=.*[@$!%*?&])/.test(password)) {
+      errors.push('Password must contain at least one special character (@$!%*?&)');
+    }
+
+    // Check for common weak passwords
+    const weakPatterns = [
+      '123456', 'password', 'qwerty', 'admin', 'welcome',
+      '12345678', '111111', 'sunshine', 'iloveyou', 'monkey'
+    ];
+    
+    const lowerPassword = password.toLowerCase();
+    if (weakPatterns.some(pattern => lowerPassword.includes(pattern))) {
+      errors.push('Password is too common or predictable');
+    }
+
+    // Check for sequential characters
+    if (/(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz)/i.test(password)) {
+      errors.push('Password contains sequential characters');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+
   const handleSignup = async () => {
     // Enhanced validation with secure practices
     if (!formData.fullName.trim() || !formData.phoneNumber.trim() || 
@@ -38,26 +83,39 @@ export default function SignupScreen() {
     }
 
     // Input sanitization check
-    if (formData.fullName.length > 100 || formData.phoneNumber.length > 16) {
+    const sanitizedFullName = formData.fullName.trim();
+    if (sanitizedFullName.length > 100 || formData.phoneNumber.length > 16) {
       Alert.alert('Error', 'Invalid input length detected');
       return;
     }
+
+    // Validate full name (only letters, spaces, hyphens, and apostrophes)
+    const nameRegex = /^[a-zA-Z\s\-']+$/;
+    if (!nameRegex.test(sanitizedFullName)) {
+      Alert.alert('Error', 'Full name can only contain letters, spaces, hyphens, and apostrophes');
+      return;
+    }
+
+    // Validate Kenyan phone number format
+    const phoneRegex = /^(\+254|0|254)?(7\d|1\d)\d{7}$/;
+const cleanPhone = formData.phoneNumber.replace(/\s/g, '');
+if (!phoneRegex.test(cleanPhone)) {
+  Alert.alert('Error', 'Please enter a valid Kenyan phone number');
+  return;
+}
 
     if (formData.password !== formData.confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
-    if (formData.password.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters');
-      return;
-    }
-
-    // Check for weak password patterns
-    const weakPatterns = ['123456', 'password', 'qwerty', 'admin'];
-    const lowerPassword = formData.password.toLowerCase();
-    if (weakPatterns.some(pattern => lowerPassword.includes(pattern))) {
-      Alert.alert('Error', 'Password is too common or predictable');
+    // Enhanced password validation
+    const passwordValidation = validatePassword(formData.password);
+    if (!passwordValidation.isValid) {
+      Alert.alert(
+        'Password Requirements', 
+        passwordValidation.errors.join('\n• ')
+      );
       return;
     }
 
@@ -76,7 +134,8 @@ export default function SignupScreen() {
         Alert.alert('Signup Failed', result.error || 'Please try again');
       }
     } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred');
+      console.error('Signup error:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +206,7 @@ export default function SignupScreen() {
               <Text style={styles.label}>Phone Number</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g., +254114768462, 254713658462, 0712345678"
+                placeholder="e.g., +254712345678 or 0712345678"
                 placeholderTextColor="#9ca3af"
                 keyboardType="phone-pad"
                 value={formData.phoneNumber}
@@ -159,7 +218,7 @@ export default function SignupScreen() {
                 autoCorrect={false}
               />
               <Text style={styles.helperText}>
-                Accepted formats: +254XXX, 254XXX, 07XXX, 01XXX
+                Accepted formats: +254XXX, 07XXX, 01XXX
               </Text>
             </View>
 
@@ -179,7 +238,7 @@ export default function SignupScreen() {
                 maxLength={100}
               />
               <Text style={styles.helperText}>
-                Must include uppercase, lowercase, number, and special character
+                Must include uppercase, lowercase, number, and special character (@$!%*?&)
               </Text>
             </View>
 
