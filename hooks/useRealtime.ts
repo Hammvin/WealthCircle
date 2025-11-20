@@ -1,4 +1,4 @@
-import { supabase } from '@/utils/supabase';
+import { supabase } from '@/lib/supabase';
 import { useEffect, useState } from 'react';
 
 export const useRealtimeChama = (chamaId: string) => {

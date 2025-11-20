@@ -82,7 +82,76 @@ export interface Database {
           updated_at?: string
         }
       }
-      // Add other table definitions from previous schema
+      chama_members: {
+        Row: {
+          id: string
+          chama_id: string
+          user_id: string
+          role: 'chairperson' | 'treasurer' | 'secretary' | 'member'
+          joined_at: string
+        }
+        Insert: {
+          id?: string
+          chama_id: string
+          user_id: string
+          role?: 'chairperson' | 'treasurer' | 'secretary' | 'member'
+          joined_at?: string
+        }
+        Update: {
+          id?: string
+          chama_id?: string
+          user_id?: string
+          role?: 'chairperson' | 'treasurer' | 'secretary' | 'member'
+          joined_at?: string
+        }
+      }
+      contributions: {
+        Row: {
+          id: string
+          chama_id: string
+          member_id: string
+          amount: number
+          transaction_code: string | null
+          payment_method: 'mpesa' | 'cash' | 'bank'
+          status: 'pending' | 'completed' | 'failed'
+          contribution_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          chama_id: string
+          member_id: string
+          amount: number
+          transaction_code?: string | null
+          payment_method?: 'mpesa' | 'cash' | 'bank'
+          status?: 'pending' | 'completed' | 'failed'
+          contribution_date?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          chama_id?: string
+          member_id?: string
+          amount?: number
+          transaction_code?: string | null
+          payment_method?: 'mpesa' | 'cash' | 'bank'
+          status?: 'pending' | 'completed' | 'failed'
+          contribution_date?: string
+          created_at?: string
+        }
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }

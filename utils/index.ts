@@ -1,1 +1,1 @@
-export { SecurityUtils } from './security';
+export { SecurityUtils } from '/security';

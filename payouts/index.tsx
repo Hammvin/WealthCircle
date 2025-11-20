@@ -139,7 +139,7 @@ export default function PayoutManagementScreen() {
       <FAB
         icon="plus"
         className="absolute bottom-4 right-4 bg-purple-600"
-        onPress={() => router.push('/payouts/request')}
+        onPress={() => router.push('./payouts/request')}
       />
     </View>
   );

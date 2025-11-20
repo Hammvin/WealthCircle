@@ -1,4 +1,4 @@
-import { handleDatabaseError, supabase } from '../utils/supabase';
+import { handleDatabaseError, supabase } from '@/lib/supabase';
 
 export interface Chama {
   id: string;

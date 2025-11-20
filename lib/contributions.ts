@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { handleSupabaseError, supabase } from '@/utils/supabase';
 
 export const ContributionService = {
   async recordContribution(contributionData: {
@@ -21,11 +21,13 @@ export const ContributionService = {
         .select()
         .single();
 
-      if (error) throw error;
-      await this.updateChamaTotal(contributionData.chama_id);
+      if (error) {
+        return handleSupabaseError(error, 'recordContribution');
+      }
+
       return { success: true, contribution: data };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return handleSupabaseError(error, 'recordContribution');
     }
   },
 
@@ -36,33 +38,19 @@ export const ContributionService = {
         .select(`
           *,
           member:chama_members(
-            user:users(full_name, profile_picture_url)
+            user:users(full_name)
           )
         `)
         .eq('chama_id', chamaId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        return handleSupabaseError(error, 'getChamaContributions');
+      }
+
       return { success: true, contributions: data };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return handleSupabaseError(error, 'getChamaContributions');
     }
-  },
-
-  private async updateChamaTotal(chamaId: string) {
-    const { data, error } = await supabase
-      .from('contributions')
-      .select('amount')
-      .eq('chama_id', chamaId)
-      .eq('status', 'completed');
-
-    if (error) throw error;
-
-    const total = data?.reduce((sum, contribution) => sum + contribution.amount, 0) || 0;
-
-    await supabase
-      .from('chamas')
-      .update({ total_kitty: total })
-      .eq('id', chamaId);
   },
 };
