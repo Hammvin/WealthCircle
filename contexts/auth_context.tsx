@@ -13,6 +13,9 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   signup: (phoneNumber: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
   signin: (phoneNumber: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  // NEW: OTP authentication methods migrated from auth.ts
+  signInWithPhoneOTP: (phoneNumber: string) => Promise<{ success: boolean; error?: string }>;
+  verifyOTP: (phoneNumber: string, token: string) => Promise<{ success: boolean; error?: string; session?: Session }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,45 +24,23 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-// Security-appropriate rate limiting
-const RATE_LIMIT_DURATION = 15 * 60 * 1000; // 15 minutes
-const MAX_ATTEMPTS_PER_WINDOW = 5;
-const SHORT_RATE_LIMIT_DURATION = 2 * 60 * 1000; // 2 minutes for development
+// Security Configuration (merged from auth.ts)
+const SECURITY_CONFIG = {
+  MIN_PHONE_LENGTH: 10,
+  MAX_PHONE_LENGTH: 15,
+  MIN_NAME_LENGTH: 2,
+  MAX_NAME_LENGTH: 100,
+  OTP_LENGTH: 6,
+  TEMP_PASSWORD_LENGTH: 12,
+  RATE_LIMIT_DURATION: 15 * 60 * 1000, // 15 minutes
+  MAX_ATTEMPTS_PER_WINDOW: 5,
+  SHORT_RATE_LIMIT_DURATION: 2 * 60 * 1000, // 2 minutes for development
+} as const;
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
-      } catch (error) {
-        // Security: Generic error logging
-        console.error('Auth initialization failed');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initializeAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-
-      if (event === 'SIGNED_OUT') {
-        await SecureStore.deleteItemAsync('user_pin_set');
-        await clearRateLimitData(); // Secure cleanup
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
 
   // Secure device fingerprinting
   const getDeviceFingerprint = async (): Promise<string> => {
@@ -99,8 +80,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const rateLimitKey = `rl_${identifierHash}`; // Obfuscated key name
       
       // Use shorter limits in development, but NEVER disable
-      const currentLimitDuration = __DEV__ ? SHORT_RATE_LIMIT_DURATION : RATE_LIMIT_DURATION;
-      const currentMaxAttempts = __DEV__ ? 10 : MAX_ATTEMPTS_PER_WINDOW;
+      const currentLimitDuration = __DEV__ ? SECURITY_CONFIG.SHORT_RATE_LIMIT_DURATION : SECURITY_CONFIG.RATE_LIMIT_DURATION;
+      const currentMaxAttempts = __DEV__ ? 10 : SECURITY_CONFIG.MAX_ATTEMPTS_PER_WINDOW;
 
       const attemptsData = await SecureStore.getItemAsync(rateLimitKey);
       
@@ -125,7 +106,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     } catch (error) {
       // SECURITY: Fail secure - block on error
-      return { allowed: false, timeRemaining: RATE_LIMIT_DURATION };
+      return { allowed: false, timeRemaining: SECURITY_CONFIG.RATE_LIMIT_DURATION };
     }
   };
 
@@ -136,6 +117,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const keysToClear = [
         `rl_signup_${deviceHash}`,
         `rl_signin_${deviceHash}`,
+        `rl_otp_${deviceHash}`,
+        `rl_verify_${deviceHash}`,
       ];
       
       for (const key of keysToClear) {
@@ -145,6 +128,166 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Silent fail - security operation
     }
   };
+
+  // DEVELOPMENT: Clear rate limits on app start (secure implementation)
+  const clearDevelopmentRateLimits = async (): Promise<void> => {
+    if (!__DEV__) return; // Only run in development
+    
+    try {
+      const deviceHash = await getDeviceFingerprint();
+      const developmentKeys = [
+        `rl_signup_${deviceHash}`,
+        `rl_signin_${deviceHash}`,
+        `rl_otp_${deviceHash}`,
+        `rl_verify_${deviceHash}`,
+      ];
+      
+      let clearedCount = 0;
+      for (const key of developmentKeys) {
+        const existed = await SecureStore.getItemAsync(key);
+        if (existed) {
+          await SecureStore.deleteItemAsync(key);
+          clearedCount++;
+        }
+      }
+      
+      if (clearedCount > 0) {
+        console.log('🔧 Development: Cleared persistent rate limits');
+      }
+    } catch (error) {
+      console.log('⚠️ Development: Could not clear rate limits', error);
+    }
+  };
+
+  // Security utilities migrated from auth.ts
+  const SecurityUtils = {
+    validatePhoneNumber(phoneNumber: string): boolean {
+      const cleanPhone = phoneNumber.replace(/\s/g, '');
+      const phoneRegex = /^(\+254|254|0)?(1[0-1]|7\d)(\d{7})$/;
+      
+      if (!phoneRegex.test(cleanPhone)) {
+        return false;
+      }
+      
+      const digitsOnly = cleanPhone.replace(/\D/g, '');
+      let normalizedDigits = digitsOnly;
+      
+      if (digitsOnly.startsWith('0')) {
+        normalizedDigits = '254' + digitsOnly.substring(1);
+      } else if (digitsOnly.length === 9) {
+        normalizedDigits = '254' + digitsOnly;
+      }
+      
+      // Security: Check for suspicious patterns
+      const sequentialRegex = /(0123|1234|2345|3456|4567|5678|6789|7890)/;
+      if (sequentialRegex.test(normalizedDigits)) {
+        return false;
+      }
+      
+      const repeatedRegex = /(\d)\1{4,}/;
+      if (repeatedRegex.test(normalizedDigits)) {
+        return false;
+      }
+      
+      return normalizedDigits.length === 12;
+    },
+
+    sanitizeInput(input: string, type: 'text' | 'phone' | 'otp' = 'text'): string {
+      let sanitized = input.trim();
+      
+      switch (type) {
+        case 'phone':
+          sanitized = sanitized
+            .replace(/[<>"'`;\\/&|$#{}[\]=]/g, '')
+            .substring(0, SECURITY_CONFIG.MAX_PHONE_LENGTH);
+          break;
+        case 'otp':
+          sanitized = sanitized.replace(/[^\d]/g, '').substring(0, SECURITY_CONFIG.OTP_LENGTH);
+          break;
+        default:
+          sanitized = sanitized
+            .replace(/[<>"'`;\\/&|$#{}[\]=]/g, '')
+            .substring(0, SECURITY_CONFIG.MAX_NAME_LENGTH);
+      }
+      
+      return sanitized;
+    },
+
+    normalizePhoneNumber(phoneNumber: string): string {
+      const cleanPhone = phoneNumber.replace(/\s/g, '');
+      const digitsOnly = cleanPhone.replace(/\D/g, '');
+      
+      let normalized = digitsOnly;
+      if (digitsOnly.startsWith('0')) {
+        normalized = '254' + digitsOnly.substring(1);
+      } else if (digitsOnly.length === 9) {
+        normalized = '254' + digitsOnly;
+      }
+      
+      if (normalized.length !== 12) {
+        throw new Error('Invalid phone number format after normalization');
+      }
+      
+      return normalized;
+    }
+  };
+
+  // Internal function to log security events (migrated from auth.ts)
+  const logSecurityEvent = async (
+    eventType: string, 
+    severity: 'low' | 'medium' | 'high', 
+    description: string, 
+    userId?: string
+  ) => {
+    try {
+      const securityEvent = {
+        user_id: userId,
+        event_type: eventType,
+        severity: severity,
+        description: description
+      };
+
+      await supabase
+        .from('security_events')
+        .insert(securityEvent);
+    } catch (error) {
+      console.error('Failed to log security event:', error);
+    }
+  };
+
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        // SECURITY: Clear development rate limits on app start
+        // This prevents persistent blocking during development
+        await clearDevelopmentRateLimits();
+
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+        setUser(session?.user ?? null);
+      } catch (error) {
+        // Security: Generic error logging
+        console.error('Auth initialization failed');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsLoading(false);
+
+      if (event === 'SIGNED_OUT') {
+        await SecureStore.deleteItemAsync('user_pin_set');
+        await clearRateLimitData(); // Secure cleanup
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const normalizeAndValidatePhone = (phoneNumber: string): { success: boolean; normalized?: string; error?: string } => {
     // Remove all non-digit characters except +
@@ -242,6 +385,119 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return { isValid: true };
   };
 
+  // NEW: OTP authentication methods migrated from auth.ts
+  const signInWithPhoneOTP = async (phoneNumber: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      // Input sanitization
+      const cleanPhone = SecurityUtils.sanitizeInput(phoneNumber, 'phone');
+
+      // Validation
+      if (!cleanPhone) {
+        return { success: false, error: 'Phone number is required' };
+      }
+
+      if (!SecurityUtils.validatePhoneNumber(cleanPhone)) {
+        return { success: false, error: 'Please enter a valid Kenyan phone number' };
+      }
+
+      // Rate limiting for OTP requests
+      const rateLimitCheck = await checkRateLimit(`otp_${cleanPhone}`);
+      if (!rateLimitCheck.allowed) {
+        const minutes = Math.ceil((rateLimitCheck.timeRemaining || SECURITY_CONFIG.RATE_LIMIT_DURATION) / (60 * 1000));
+        await logSecurityEvent('otp_rate_limit_exceeded', 'medium', `OTP request rate limit exceeded for ${cleanPhone}`);
+        return { 
+          success: false, 
+          error: `Too many OTP requests. Please try again in ${minutes} minute(s).`
+        };
+      }
+
+      const normalizedPhone = SecurityUtils.normalizePhoneNumber(cleanPhone);
+
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalizedPhone,
+        options: {
+          channel: 'sms'
+        }
+      });
+
+      if (error) {
+        console.error('Signin OTP request failed:', error.message);
+        await logSecurityEvent('signin_otp_failed', 'medium', `Signin OTP request failed: ${error.message}`);
+        
+        if (error.message?.includes('rate limit') || error.code === 'rate_limit_exceeded') {
+          return { success: false, error: 'Too many attempts. Please try again later.' };
+        }
+        
+        return { success: false, error: 'Failed to send verification code. Please try again.' };
+      }
+
+      await logSecurityEvent('signin_otp_sent', 'low', `Signin OTP sent to ${normalizedPhone}`);
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Signin OTP unexpected error:', error);
+      await logSecurityEvent('signin_otp_unexpected_error', 'high', `Unexpected error during OTP signin: ${error.message}`);
+      return { success: false, error: 'Login failed. Please try again.' };
+    }
+  };
+
+  // NEW: OTP verification method migrated from auth.ts
+  const verifyOTP = async (phoneNumber: string, token: string): Promise<{ success: boolean; error?: string; session?: Session }> => {
+    try {
+      // Input sanitization
+      const cleanPhone = SecurityUtils.sanitizeInput(phoneNumber, 'phone');
+      const cleanToken = SecurityUtils.sanitizeInput(token, 'otp');
+
+      // Validation
+      if (!cleanPhone || !cleanToken) {
+        return { success: false, error: 'Phone number and OTP are required' };
+      }
+
+      if (!SecurityUtils.validatePhoneNumber(cleanPhone)) {
+        return { success: false, error: 'Invalid phone number format' };
+      }
+
+      if (cleanToken.length !== SECURITY_CONFIG.OTP_LENGTH) {
+        return { success: false, error: 'Invalid OTP format' };
+      }
+
+      // Rate limiting for OTP verification
+      const rateLimitCheck = await checkRateLimit(`verify_${cleanPhone}`);
+      if (!rateLimitCheck.allowed) {
+        const minutes = Math.ceil((rateLimitCheck.timeRemaining || SECURITY_CONFIG.RATE_LIMIT_DURATION) / (60 * 1000));
+        await logSecurityEvent('otp_verify_rate_limit_exceeded', 'medium', `OTP verification rate limit exceeded for ${cleanPhone}`);
+        return { 
+          success: false, 
+          error: `Too many verification attempts. Please try again in ${minutes} minute(s).`
+        };
+      }
+
+      const normalizedPhone = SecurityUtils.normalizePhoneNumber(cleanPhone);
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: normalizedPhone,
+        token: cleanToken,
+        type: 'sms',
+      });
+
+      if (error) {
+        console.error('OTP verification failed:', error.message);
+        await logSecurityEvent('otp_verification_failed', 'medium', `OTP verification failed: ${error.message}`);
+        return { success: false, error: 'Invalid or expired OTP' };
+      }
+
+      // Reset rate limit on success
+      await clearRateLimitData();
+      await logSecurityEvent('otp_verified', 'low', `OTP verified successfully for ${normalizedPhone}`, data.session?.user?.id);
+
+      return { success: true, session: data.session };
+    } catch (error: any) {
+      console.error('OTP verification unexpected error:', error);
+      await logSecurityEvent('otp_verification_error', 'high', `Unexpected error during OTP verification: ${error.message}`);
+      return { success: false, error: 'Verification failed. Please try again.' };
+    }
+  };
+
   const signup = async (
     phoneNumber: string, 
     password: string, 
@@ -266,7 +522,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Rate limiting check
     const rateLimitCheck = await checkRateLimit(`signup_${phoneValidation.normalized}`);
     if (!rateLimitCheck.allowed) {
-      const minutes = Math.ceil((rateLimitCheck.timeRemaining || RATE_LIMIT_DURATION) / (60 * 1000));
+      const minutes = Math.ceil((rateLimitCheck.timeRemaining || SECURITY_CONFIG.RATE_LIMIT_DURATION) / (60 * 1000));
       return { 
         success: false, 
         error: `Too many attempts. Please try again in ${minutes} minute(s).`
@@ -356,7 +612,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const rateLimitCheck = await checkRateLimit(`signin_${phoneValidation.normalized}`);
     if (!rateLimitCheck.allowed) {
-      const minutes = Math.ceil((rateLimitCheck.timeRemaining || RATE_LIMIT_DURATION) / (60 * 1000));
+      const minutes = Math.ceil((rateLimitCheck.timeRemaining || SECURITY_CONFIG.RATE_LIMIT_DURATION) / (60 * 1000));
       return { 
         success: false, 
         error: `Too many attempts. Please try again in ${minutes} minute(s).`
@@ -416,7 +672,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     signOut,
     signup,
     signin,
-    // NO resetRateLimits exposed - security risk
+    // NEW: OTP authentication methods
+    signInWithPhoneOTP,
+    verifyOTP,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

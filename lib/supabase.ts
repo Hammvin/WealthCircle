@@ -21,9 +21,9 @@ const SECURITY_CONFIG = {
   SESSION_TIMEOUT: 7 * 24 * 60 * 60 * 1000, // 7 days
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
-  RATE_LIMIT_WINDOW: 60000, // 1 minute
-  MAX_RATE_LIMIT_ATTEMPTS: 5,
 } as const;
+
+// REMOVED: Conflicting rate limiting constants
 
 // Kenyan Phone Number Utilities
 export const KenyanPhoneUtils = {
@@ -480,56 +480,7 @@ export const validateInput = {
   },
 };
 
-// Security: Rate limiting implementation
-const rateLimitStore = new Map<string, { count: number; lastAttempt: number; blockedUntil?: number }>();
-
-export const checkRateLimit = (
-  identifier: string, 
-  action: string, 
-  maxAttempts: number = SECURITY_CONFIG.MAX_RATE_LIMIT_ATTEMPTS, 
-  windowMs: number = SECURITY_CONFIG.RATE_LIMIT_WINDOW
-): { allowed: boolean; retryAfter?: number; attemptsLeft?: number } => {
-  const key = `${identifier}:${action}`;
-  const now = Date.now();
-  const record = rateLimitStore.get(key);
-
-  // Check if currently blocked
-  if (record?.blockedUntil && now < record.blockedUntil) {
-    return { 
-      allowed: false, 
-      retryAfter: Math.ceil((record.blockedUntil - now) / 1000) 
-    };
-  }
-
-  // Reset if window has passed or no record exists
-  if (!record || (now - record.lastAttempt > windowMs)) {
-    rateLimitStore.set(key, { count: 1, lastAttempt: now });
-    return { allowed: true, attemptsLeft: maxAttempts - 1 };
-  }
-
-  // Check if exceeded limit
-  if (record.count >= maxAttempts) {
-    // Block for 15 minutes
-    const blockedUntil = now + (15 * 60 * 1000);
-    rateLimitStore.set(key, { ...record, blockedUntil });
-    
-    SecurityLogger.log('RATE_LIMIT_EXCEEDED', { identifier, action, attempts: record.count });
-    
-    return { 
-      allowed: false, 
-      retryAfter: 900 // 15 minutes in seconds
-    };
-  }
-
-  // Increment count
-  record.count++;
-  record.lastAttempt = now;
-  
-  return { 
-    allowed: true, 
-    attemptsLeft: maxAttempts - record.count 
-  };
-};
+// REMOVED: Conflicting rate limiting implementation from this file
 
 // Security: Data sanitization utilities
 const sanitizeErrorMessage = (message: string): string => {
@@ -854,10 +805,9 @@ export const DatabaseOperations = {
   },
 };
 
-// Export security utilities
+// Export security utilities (REMOVED checkRateLimit from exports)
 export const Security = {
   validateInput,
-  checkRateLimit,
   executeSecureQuery,
   validateUserPermissions,
   initializeSecureDatabase,
