@@ -2,6 +2,8 @@ import { SplashScreen, Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../contexts/auth_context';
 import { ChamaProvider } from '../contexts/ChamaContext';
+import '../lib/polyfills';
+
 
 SplashScreen.preventAutoHideAsync();
 

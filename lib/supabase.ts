@@ -2,6 +2,20 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Database } from './database.types';
 
+// Remove the problematic NodeJS.Timeout polyfill and replace with native React Native approach
+// Security: Session management with automatic timeout using native setTimeout
+let sessionTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const resetSessionTimeout = () => {
+  if (sessionTimeout) clearTimeout(sessionTimeout);
+  
+  sessionTimeout = setTimeout(async () => {
+    console.log('Session timeout - signing out user for security');
+    await SecurityLogger.log('SESSION_TIMEOUT');
+    await supabase.auth.signOut();
+  }, SECURITY_CONFIG.SESSION_TIMEOUT);
+};
+
 // Security Configuration
 const SECURITY_CONFIG = {
   SESSION_TIMEOUT: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -176,7 +190,7 @@ const ExpoSecureStoreAdapter = {
       
       // In production, add decryption logic here
       return encryptedValue;
-    } catch (error) {
+    } catch (error: any) {
       console.error('SecureStore get error:', error);
       await SecurityLogger.log('SECURE_STORE_GET_FAILED', { key, error: error.message });
       return null;
@@ -187,7 +201,7 @@ const ExpoSecureStoreAdapter = {
     try {
       // Add encryption in production
       await SecureStore.setItemAsync(key, value);
-    } catch (error) {
+    } catch (error: any) {
       console.error('SecureStore set error:', error);
       await SecurityLogger.log('SECURE_STORE_SET_FAILED', { key, error: error.message });
       throw new Error('Failed to store secure data');
@@ -197,7 +211,7 @@ const ExpoSecureStoreAdapter = {
   removeItem: async (key: string): Promise<void> => {
     try {
       await SecureStore.deleteItemAsync(key);
-    } catch (error) {
+    } catch (error: any) {
       console.error('SecureStore remove error:', error);
       await SecurityLogger.log('SECURE_STORE_REMOVE_FAILED', { key, error: error.message });
     }
@@ -310,19 +324,6 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     },
   },
 });
-
-// Security: Session management with automatic timeout
-let sessionTimeout: NodeJS.Timeout;
-
-const resetSessionTimeout = () => {
-  if (sessionTimeout) clearTimeout(sessionTimeout);
-  
-  sessionTimeout = setTimeout(async () => {
-    console.log('Session timeout - signing out user for security');
-    await SecurityLogger.log('SESSION_TIMEOUT');
-    await supabase.auth.signOut();
-  }, SECURITY_CONFIG.SESSION_TIMEOUT);
-};
 
 // Enhanced auth state change listener with security monitoring
 supabase.auth.onAuthStateChange(async (event, session) => {
@@ -678,7 +679,7 @@ export const DatabaseOperations = {
     getById: async (chamaId: string) => {
       return executeSecureQuery(
         supabase
-        .from('chamas')
+          .from('chamas')
           .select('*')
           .eq('id', chamaId)
           .single(),
